@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python/
+env/
+venv/  # Crucial! This ignores your virtual environment
+*.env  # If you store environment variables in a .env file
+.pytest_cache/
+.mypy_cache/
+dist/
+build/
+*.egg-info/
+
+# MySQL related (if you have local config files not meant for repo)
+*.sql.bak
+.env
+/.env
