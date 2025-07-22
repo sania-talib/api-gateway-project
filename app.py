@@ -4,21 +4,40 @@ from flask_mysqldb import MySQL
 import json
 import random
 from collections import defaultdict
+import os
+from dotenv import load_dotenv
+
+
+# Load environment variable from .env file
+
+load_dotenv()
+print(f"DB_HOST: {os.getenv('DB_HOST')}")
+
+
+
 
 app = Flask(__name__)
 
 #-------MySQL CONFIGURATION-------
-app.config['MYSQL_HOST'] = 'localhost'
-app.config['MYSQL_USER'] = 'gateway_user'
-app.config['MYSQL_PASSWORD'] = 'password123'
-app.config['MYSQL_DB'] = 'api_gateway_db'
+app.config['MYSQL_HOST'] = os.getenv('DB_HOST')
+app.config['MYSQL_USER'] = os.getenv('DB-USER')
+app.config['MYSQL_PASSWORD'] = os.getenv('DB_PASSWORD')
+app.config['MYSQL_DB'] = os.getenv('DB_NAME')
 mysql = MySQL(app)
 
 
 #-----Rate Limiting Configuration -----
-REQUEST_LIMIT_PER_MINUTE = 10
+REQUEST_LIMIT_PER_MINUTE = int(os.getenv('REQUEST_LIMIT_PER_MINUTE', 10))
 # Stores reuests for each IP: {'ip_address':[timestamp1, timestamp2, ...........]}
 request_timestamps = defaultdict(list)
+
+
+#------ Flask Debug Mode (Load from .env)--------
+app.config['DEBUG'] = os.getenv('FLASK_DEBUG', 'True').lower() in  ('true', '1', 't')
+
+
+
+
 
 #------Basic API Gateway Class (OOP Concept)------
 
@@ -141,6 +160,6 @@ def handel_request(endpoint):
     return jsonify(response_data), status_code
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000)
 
     

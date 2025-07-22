@@ -2,18 +2,31 @@
 import pymysql
 import json
 from datetime import datetime, timedelta
-
+import os
+from dotenv import load_dotenv
 import pymysql.cursors
 
 
+
+# Load environment variable from .env file
+load_dotenv()
+print(F"DB_HOST: {os.getenv('DB_HOST')}")
+print(f"DEBUG: DB_HOST from .env: {os.getenv('DB_HOST')}")
+print(f"DEBUG: DB_USER from .env: {os.getenv('DB_USER')}")
+print(f"DEBUG: DB_PASSWORD from .env: {os.getenv('DB_PASSWORD')}")
+print(f"DEBUG: DB_NAME from .env: {os.getenv('DB_NAME')}")
 #-------Database Configuration------
 
 DB_CONFIG = {
-    'host': 'localhost',
-    'user': 'gateway_user',
-    'password': 'password123',
-    'db': 'api_gateway_db'
+    'host': os.getenv('DB_HOST'),
+    'user': os.getenv('DB_USER'),
+    'password': os.getenv('DB_PASSWORD'),
+    'db': os.getenv('DB_NAME')
 }
+
+
+print(f"DEBUG: DB_CONFIG passed to pymysql.connect: {DB_CONFIG}")
+
 
 def get_db_connection():
     """Establish and returns a database connection."""
