@@ -1,165 +1,101 @@
 import time
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify # Removed g, not used
 from flask_mysqldb import MySQL
-import json
-import random
-from collections import defaultdict
+import json # Not directly used in the provided routes, but might be for request.json
+from collections import defaultdict # Not directly used here, but ok if other parts use it
+from gateway import APIGateway # Import your APIGateway class
 import os
 from dotenv import load_dotenv
 
-
-# Load environment variable from .env file
-
+# Load environment variables
 load_dotenv()
-print(f"DB_HOST: {os.getenv('DB_HOST')}")
 
-
-
-
+# --- Flask App Configuration ---
 app = Flask(__name__)
 
-#-------MySQL CONFIGURATION-------
-app.config['MYSQL_HOST'] = os.getenv('DB_HOST')
-app.config['MYSQL_USER'] = os.getenv('DB-USER')
-app.config['MYSQL_PASSWORD'] = os.getenv('DB_PASSWORD')
-app.config['MYSQL_DB'] = os.getenv('DB_NAME')
+app.config['MYSQL_HOST'] = os.getenv('DB_HOST') or 'localhost'
+app.config['MYSQL_USER'] = os.getenv('DB_USER') or 'gateway_user' # Corrected 'DB-USER' to 'DB_USER'
+app.config['MYSQL_PASSWORD'] = os.getenv('DB_PASSWORD') or 'password123'
+app.config['MYSQL_DB'] = os.getenv('DB_NAME') or 'api_gateway_db'
 mysql = MySQL(app)
 
+print(f"DB_HOST: {os.getenv('DB_HOST')}")
+print(f"DEBUG: DB_PASSWORD from .env: {os.getenv('DB_PASSWORD')}")
+print(f"DEBUG: DB_NAME from .env: {os.getenv('DB_NAME')}")
 
-#-----Rate Limiting Configuration -----
-REQUEST_LIMIT_PER_MINUTE = int(os.getenv('REQUEST_LIMIT_PER_MINUTE', 10))
-# Stores reuests for each IP: {'ip_address':[timestamp1, timestamp2, ...........]}
-request_timestamps = defaultdict(list)
+app.config['DEBUG'] = os.getenv('FLASK_DEBUG', 'True').lower() in ('true', '1', 't')
 
-
-#------ Flask Debug Mode (Load from .env)--------
-app.config['DEBUG'] = os.getenv('FLASK_DEBUG', 'True').lower() in  ('true', '1', 't')
-
-
-
-
-
-#------Basic API Gateway Class (OOP Concept)------
-
-class APIGateway:
-    def __init__(self, db_conn):
-        self.db_conn = db_conn
-        self.mock_services = {
-            '/users': self._call_user_service,
-            '/products': self._call_product_service
-        }
-
-    def is_rate_limited(self, ip_address):
-        current_time = time.time()
-
-        # Remove old timestamps (older than 1 minute)
-        request_timestamps[ip_address] = [
-            ts for ts in request_timestamps[ip_address]
-            if current_time - ts <= 60    # Keep only timestamps within the last 60 seconds
-        ]
-
-        #Check if current requests exceed the limit
-        if len(request_timestamps[ip_address]) >= REQUEST_LIMIT_PER_MINUTE:
-            return True
-        
-        #Add current Request timestamp
-        request_timestamps[ip_address].append(current_time)
-        return False
-    
-   
-
-
-
-
-
-
-
-    def _call_user_service(self):
-        time.sleep(0.05 + 0.1 * random.random())
-        if random.random() < 0.5:
-            return {"error": "User Service Unavailable"}, 500
-        return {"data": [{"id": 101, "name": "Laptop"}, {"id": 102, "name": "Mouse"}]}, 200
-    
-    def _call_product_service(self):
-        time.sleep(0.08 + 0.15 * random.random())
-        if random.random() < 0.1:
-            return {"error": "Product Service Internal error"}, 500
-        return {"data": [{"id": 101, "name": "Laptop"}, {"id": 102, "name": "Mouse"}]}, 200
-    
-    def process_request(self, endpoint, method):
-        start_time = time.time()
-        status_code = 500
-        response_data = {"error": "EGateway internal processing error"}
-        is_error = True
-
-
-        #--------Rate limiting check--
-
-        client_ip = request.remote_addr
-        if self.is_rate_limited(client_ip):
-            response_data = {"error": "Too many requests. Please try again later."}
-            status_code = 429  #HTTP Status code for too many requests
-            is_error = True   # Consider rate limiting as an operational error for logging
-            response_time_ms = 0
-            self._log_request(endpoint, method, status_code, response_time_ms, is_error)
-            return response_data, status_code
-        
-
-
-
-
-
-
-        if endpoint in self.mock_services:
-            service_func = self.mock_services[endpoint]
-            try:
-                response_data, status_code = service_func()
-                is_error = status_code >= 400
-            except Exception as e:
-                print(f"Error calling service {endpoint}: {e}")
-                response_data = {"error": "Gtaeway internal processing error"}
-                status_code = 500
-
-        end_time = time.time()
-        response_time_ms = int((end_time - start_time) * 1000)
-
-
-        try:
-            cur = self.db_conn.connection.cursor()
-            sql = """INSERT INTO api_logs (endpoint, http_method, status_code, response_time_ms, is_error)
-                 VALUES (%s, %s, %s, %s, %s)"""
-            cur.execute(sql, (endpoint, method, status_code, response_time_ms, is_error))
-            self.db_conn.connection.commit()
-            cur.close()
-        except Exception as e:
-            print(f"Error logging to database: {e}")
-
-        return response_data, status_code
-    
-    # --- New Helper Function for Logging (to avoid code duplication) ---
-    def _log_request(self, endpoint, method, status_code, response_time_ms, is_error):
-        try:
-            cur = self.db_conn.connection.cursor()
-            sql = """INSERT INTO api_logs (timestamp, endpoint, http_method, status_code, response_time_ms, is_error)
-                     VALUES (NOW(), %s, %s, %s, %s, %s)"""
-            cur.executr(sql,(endpoint, method, status_code, response_time_ms, is_error))
-            self.db_conn.connection.commit()
-            cur.close()
-        except Exception as e:
-             print(f"Error logging to database: {e}")
-
-
-
-    
+# Instantiate the APIGateway with the MySQL connection
 gateway = APIGateway(mysql)
 
-#----- Flask Routes--------
-@app.route('/api/<path:endpoint>', methods = ['GET', 'POST', 'PUT', 'DELETE'])
-def handel_request(endpoint):
-    response_data, status_code = gateway.process_request(f'/{endpoint}',request.method)
-    return jsonify(response_data), status_code
+# --- Flask Routes and Hooks ---
+
+@app.before_request
+def authentication_and_rate_limiting_check():
+    api_key = request.headers.get('X-API-KEY')
+
+    # Authentication
+    if not gateway._authenticate_request(api_key):
+        # Use gateway's create_response for consistency
+        return gateway.create_response({"status": "error", "message": "Unauthorized: Invalid or missing API key."}, 401)
+
+    # Rate Limiting
+    client_ip = request.remote_addr
+    if gateway.is_rate_limited(client_ip):
+        # Log the rate limit before returning
+        gateway._log_request(request.path, request.method, 429, 0, True)
+        # Use gateway's create_response
+        return gateway.create_response({"status": "error", "message": "Too many requests. Please try again later."}, 429)
+    
+    # If both checks pass, continue to the request handler
+    pass # No return means continue processing the request
+
+@app.route('/api/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE'])
+def api_proxy(path):
+    # Extract service_name from the path (e.g., 'users' from '/api/users')
+    path_segments = path.split('/')
+    if not path_segments or path_segments[0] == '': # Handles cases like /api/ or /api
+        return gateway.create_response({"status": "error", "message": "Invalid API path."}, 400)
+    
+    service_name = path_segments[0] # The first segment after /api/ (e.g., 'users')
+    
+    # full_path is what you might want to log or pass to backend if it expects /users/1 etc.
+    # For mock_services in gateway.py, we only use 'service_name' for dictionary key.
+    full_path_for_logging = '/' + path # e.g., /users or /users/123
+
+    method = request.method
+    headers = dict(request.headers)
+    json_data = request.get_json(silent=True)
+
+    # Call the gateway's process_request method
+    # This should return a dictionary and a status code.
+    response_data, status_code = gateway.process_request(
+        service_name, full_path_for_logging, method, headers, json_data
+    )
+
+    # Use the gateway's create_response method to generate the final Flask Response
+    return gateway.create_response(response_data, status_code)
+
+# --- Removed the redundant and problematic `handel_request` route from app.py ---
+# @app.route('/api/<path:endpoint>', methods = ['GET', 'POST', 'PUT', 'DELETE'])
+# def handel_request(endpoint):
+#     # ... this logic is now handled correctly by api_proxy and gateway.handle_service_request
+#     pass
+
+# --- Centralized Error Handlers ---
+@app.errorhandler(404)
+def handle_not_found_error(e):
+    # Log the error via gateway's internal logging
+    gateway._log_request(request.path, request.method, 404, 0, True)
+    # Use gateway's create_response
+    return gateway.create_response({"status": "error", "message": "The requested URL was not found on the server."}, 404)
+
+@app.errorhandler(500)
+def handle_internal_server_error(e): # Corrected function name from handel_ to handle_
+    # Log the error via gateway's internal logging
+    gateway._log_request(request.path, request.method, 500, 0, True)
+    # Use gateway's create_response
+    return gateway.create_response({"status": "error", "message": "An internal server error occurred."}, 500)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
-
-    
